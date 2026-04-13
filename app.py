@@ -34,7 +34,23 @@ def load_data() -> pd.DataFrame:
         return pd.DataFrame(columns=COLUMNS)
 
 def save_data(df: pd.DataFrame):
-    df[COLUMNS].to_csv(CSV_PATH, index=False)
+    """Save data to CSV with explicit error handling and flushing."""
+    try:
+        df[COLUMNS].to_csv(CSV_PATH, index=False)
+        
+        # Verify file was written
+        if CSV_PATH.exists():
+            # Force OS-level sync to disk (ensures data durability)
+            import os
+            if hasattr(os, 'fsync'):
+                with open(CSV_PATH, 'a') as f:
+                    os.fsync(f.fileno())
+        else:
+            st.error("⚠️ Warning: CSV file may not have been saved properly")
+            raise IOError(f"File not found after save attempt: {CSV_PATH}")
+    except IOError as e:
+        st.error(f"❌ Error writing to file {CSV_PATH}: {e}")
+        raise  # Re-raise for upstream handling
 
 def append_row(row_dict: dict):
     df = load_data()
