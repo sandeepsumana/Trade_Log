@@ -439,7 +439,16 @@ def page_log():
     ]
     df_display = df[[col for col in display_columns if col in df.columns]]
     st.dataframe(df_display, width='stretch', height=500)
-    
+
+        # Download current log as CSV (so you can back it up to GitHub)
+    csv_bytes = df.to_csv(index=False).encode("utf-8")
+    st.download_button(
+        label="⬇️ Download full CSV (backup)",
+        data=csv_bytes,
+        file_name="Trade-Journal-2025-26-Journal.csv",
+        mime="text/csv",
+        use_container_width=True,
+    )
     st.markdown("---")
     st.markdown("### 🗑️ Manage Records")
     
