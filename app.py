@@ -117,10 +117,10 @@ def page_validation():
     with col1:
         date = st.text_input("Date", value=today_str())
     with col2:
-        # Auto-populate day from date
         day = get_day_from_date(date)
         st.text_input("Day", value=day, disabled=True)
 
+    # Market inputs
     st.subheader("Market Inputs")
     prev_close = st.number_input("Previous day Close", value=0, step=1, format="%d")
     today_open = st.number_input("Today Open", value=0, step=1, format="%d")
@@ -143,86 +143,93 @@ def page_validation():
     tf_hourly  = st.selectbox("Hourly trend", ["UP","DOWN","SIDE"])
 
     # Check if all data is filled
-    data_filled = (prev_close > 0 and today_open != 0 and spot_945 > 0 and 
-                   tf_monthly != "" and tf_daily != "" and tf_hourly != "")
+    data_filled = (
+        prev_close > 0
+        and today_open != 0
+        and spot_945 > 0
+        and tf_monthly != ""
+        and tf_daily != ""
+        and tf_hourly != ""
+    )
 
-    # Display container with border for validation results
+    # ---------- Core validation logic ----------
+
+    signal = "NONE"
+    trade_allowed = "NO"
+    type_field = "NO TRADE (NO SIGNAL)"
+    no_trade_reason = ""
+    warning_message = ""
+
+    if data_filled:
+        # Step 1: derive signal
+        if spot_945 and prev_close:
+            if spot_945 > trig_high:
+                signal = "CALL"
+            elif spot_945 < trig_low:
+                signal = "PUT"
+
+        # Step 2: apply filters
+        if signal == "NONE":
+            no_trade_reason = "No 0.3% move"
+            type_field = "NO TRADE (NO SIGNAL)"
+
+        elif tf_monthly == "Y":
+            no_trade_reason = "Near monthly level"
+            type_field = "NO TRADE (MONTHLY ZONE)"
+
+        elif tf_daily == "Y":
+            warning_message = "⚠️ WARNING: Near strong Daily S/R - proceed with caution"
+            # keep checking further; do not block
+
+        # IV filter
+        if signal != "NONE" and tf_monthly != "Y" and iv_945 > 60:
+            no_trade_reason = "IV too high"
+            type_field = "⚠️ NO TRADE (IV TOO HIGH)"
+
+        # Gap filter
+        elif signal != "NONE" and tf_monthly != "Y" and abs(gap_points) > 100:
+            no_trade_reason = "Gap > 100"
+            type_field = "⚠️ NO TRADE (GAP > 100)"
+
+        # Hourly alignment
+        elif signal != "NONE" and tf_monthly != "Y" and iv_945 <= 60 and abs(gap_points) <= 100:
+            if (signal == "CALL" and tf_hourly == "DOWN") or (signal == "PUT" and tf_hourly == "UP"):
+                no_trade_reason = "Hourly misaligned (opposite to signal)"
+                type_field = "NO TRADE (HOURLY MISALIGNED)"
+            else:
+                trade_allowed = "YES"
+                type_field = f"BUY {signal} SPREAD"
+
+    # ---------- Display validation card ----------
+
     with st.container(border=True):
         st.markdown("### ✓ Trade Signal Validation")
 
         if not data_filled:
             st.info("📝 Kindly update all the data above to see validation results.")
         else:
-            # Step 1: Determine the signal based on triggers
-            signal = "NONE"
-            if spot_945 and prev_close:
-                if spot_945 > trig_high:
-                    signal = "CALL"
-                elif spot_945 < trig_low:
-                    signal = "PUT"
-
-            # Step 2: Apply validation checks in order
-            trade_allowed = "NO"
-            type_field = "NO TRADE (NO SIGNAL)"
-            no_trade_reason = ""
-            warning_message = ""
-
-            # Check 1: Signal must exist
-            if signal == "NONE":
-                no_trade_reason = "No 0.3% move"
-                type_field = "NO TRADE (NO SIGNAL)"
-            
-            # Check 2: Monthly zone filter
-            elif tf_monthly == "Y":
-                no_trade_reason = "Near monthly level"
-                type_field = "NO TRADE (MONTHLY ZONE)"
-            
-            # Check 3: Daily S/R filter - WARNING ONLY, DO NOT BLOCK
-            elif tf_daily == "Y":
-                warning_message = "⚠️ WARNING: Near strong Daily S/R - proceed with caution"
-                # Continue to next checks, don't block
-            
-            # Check 4: IV filter (IV limit = 60)
-            if signal != "NONE" and tf_monthly != "Y" and iv_945 > 60:
-                no_trade_reason = "IV too high"
-                type_field = "⚠️ NO TRADE (IV TOO HIGH)"
-            
-            # Check 5: Gap filter
-            elif signal != "NONE" and tf_monthly != "Y" and abs(gap_points) > 100:
-                no_trade_reason = "Gap > 100"
-                type_field = "⚠️ NO TRADE (GAP > 100)"
-            
-            # Check 6: Hourly trend alignment - BLOCK only opposite signals
-            elif signal != "NONE" and tf_monthly != "Y" and iv_945 <= 60 and abs(gap_points) <= 100:
-                if (signal == "CALL" and tf_hourly == "DOWN") or (signal == "PUT" and tf_hourly == "UP"):
-                    no_trade_reason = "Hourly misaligned (opposite to signal)"
-                    type_field = "NO TRADE (HOURLY MISALIGNED)"
-                else:
-                    # ALLOW: UP/SIDE for CALL, DOWN/SIDE for PUT, or any SIDE
-                    trade_allowed = "YES"
-                    type_field = f"BUY {signal} SPREAD"
-
-            # Display validation results
-            col1, col2, col3 = st.columns(3)
-            with col1:
+            c1, c2, c3 = st.columns(3)
+            with c1:
                 status_color = "🟢" if trade_allowed == "YES" else "🔴"
                 st.metric("Trade Allowed", f"{status_color} {trade_allowed}")
-            with col2:
+            with c2:
                 signal_display = signal if trade_allowed == "YES" else "NA"
                 st.metric("Signal Type", signal_display)
-            with col3:
+            with c3:
                 st.metric("Status", type_field)
-            
+
             if trade_allowed == "NO":
                 st.error(f"❌ Reason: {no_trade_reason}")
-            
-            # Display warning if Daily S/R is nearby
             if warning_message:
                 st.warning(warning_message)
-                
-    # Save NO TRADE row
-    if data_filled and trade_allowed == "NO":
-        # If we don't already have a reason and there was no signal, set default
+
+    # If required inputs are missing, stop here
+    if not data_filled:
+        return
+
+    # ---------- NO-TRADE logging ----------
+
+    if trade_allowed == "NO":
         if not no_trade_reason and signal == "NONE":
             no_trade_reason = "No 0.3% move"
             type_field = "NO TRADE (NO SIGNAL)"
@@ -235,10 +242,10 @@ def page_validation():
                 "Previous day Close": int(prev_close),
                 "Gap Points": gap_points,
                 "Nifty Open": int(today_open),
-                "Nifty Spot at 9.45 AM": int(spot_945),
+                "Nifty Spot at 9:45 AM": int(spot_945),
                 "Trigger High (+0.3%)": trig_high,
                 "Trigger Low (-0.3%)": trig_low,
-                "IV Percentile at 9.45 AM": int(iv_945),
+                "IV Percentile at 9:45 AM": int(iv_945),
                 "Trade Signal": type_field,
                 "PnL": 0,
                 "Result": "NO TRADE",
@@ -251,177 +258,168 @@ def page_validation():
             })
             append_row(row)
             st.success("✅ No-trade day logged.")
+        return
 
-        # For trade days: show form to enter trade details (ONLY AFTER ALL DATA ENTERED)
-        if data_filled and trade_allowed == "YES":
-            st.markdown("---")
-            
-            # Calculate suggested strikes
-            atm, buy_strike_suggest, sell_strike_suggest = calculate_strikes(spot_945, signal)
-            
-            st.info(f"💡 **Suggested Strikes:** ATM = {atm} | Buy Strike = {buy_strike_suggest} | Sell Strike = {sell_strike_suggest}")
-            
-            st.markdown("#### ⚡ Strike Details")
-            col1, col2 = st.columns(2)
-            with col1:
-                buy_strike  = st.number_input("Buy Strike", value=buy_strike_suggest, step=50, format="%d")
-            with col2:
-                sell_strike = st.number_input("Sell Strike", value=sell_strike_suggest, step=50, format="%d")
+    # ---------- Trade entry form (only when allowed) ----------
 
-            # Premiums section
-            st.markdown("#### 📈 Entry Premiums")
-            col3, col4 = st.columns(2)
-            with col3:
-                buy_entry = st.number_input("Buy Entry Premium", value=0.0, step=0.05, format="%.2f")
-            with col4:
-                sell_entry = st.number_input("Sell Entry Premium", value=0.0, step=0.05, format="%.2f")
+    # At this point: data_filled is True and trade_allowed == "YES"
 
-            # Quantity section
-            st.markdown("#### 💼 Position Details")
-            qty = st.number_input("Quantity", value=65, step=1, format="%d")
+    st.markdown("---")
 
-            # Calculate entry spread metrics - OUTSIDE form for real-time updates
-            net_spread = buy_entry - sell_entry
-            spread_target = net_spread * 1.5 if net_spread > 0 else 0
-            spread_sl = net_spread * 0.75 if net_spread > 0 else 0
-            buy_strike_target = buy_entry * 1.5 if buy_entry > 0 else 0
-            buy_strike_sl = buy_entry * 0.75 if buy_entry > 0 else 0
+    # Suggested strikes
+    atm, buy_strike_suggest, sell_strike_suggest = calculate_strikes(spot_945, signal)
+    st.info(f"💡 **Suggested Strikes:** ATM = {atm} | Buy Strike = {buy_strike_suggest} | Sell Strike = {sell_strike_suggest}")
 
-            # Display Entry Spread Analysis - ALWAYS SHOW (even if 0)
-            st.markdown("**Entry Spread Analysis:**")
-            spread1, spread2, spread3 = st.columns(3)
-            with spread1:
-                st.metric("Net Spread (Entry)", f"₹{net_spread:.2f}", delta=f"Credit" if net_spread < 0 else "Debit")
-            with spread2:
-                st.metric("Spread Target", f"₹{spread_target:.2f}")
-            with spread3:
-                st.metric("Spread SL", f"₹{spread_sl:.2f}")
+    st.markdown("#### ⚡ Strike Details")
+    c1, c2 = st.columns(2)
+    with c1:
+        buy_strike  = st.number_input("Buy Strike", value=buy_strike_suggest, step=50, format="%d")
+    with c2:
+        sell_strike = st.number_input("Sell Strike", value=sell_strike_suggest, step=50, format="%d")
 
-            spread4, spread5, spread6 = st.columns(3)
-            max_profit = (spread_target - net_spread) * qty if spread_target > 0 else 0
-            max_loss = (net_spread - spread_sl) * qty if spread_sl > 0 else 0
-            risk_reward = max_profit / max_loss if max_loss != 0 else 0
-            
-            with spread4:
-                st.metric("Max Profit", f"₹{max_profit:.0f}")
-            with spread5:
-                st.metric("Max Loss", f"₹{abs(max_loss):.0f}")
-            with spread6:
-                st.metric("Risk:Reward", f"{risk_reward:.2f}" if max_loss != 0 else "N/A")
+    # Entry premiums
+    st.markdown("#### 📈 Entry Premiums")
+    c3, c4 = st.columns(2)
+    with c3:
+        buy_entry = st.number_input("Buy Entry Premium", value=0.0, step=0.05, format="%.2f")
+    with c4:
+        sell_entry = st.number_input("Sell Entry Premium", value=0.0, step=0.05, format="%.2f")
 
-            spread7, spread8 = st.columns(2)
-            with spread7:
-                st.metric("Buy Strike Target", f"₹{buy_strike_target:.2f}")
-            with spread8:
-                st.metric("Buy Strike SL", f"₹{buy_strike_sl:.2f}")
+    # Quantity
+    st.markdown("#### 💼 Position Details")
+    qty = st.number_input("Quantity", value=65, step=1, format="%d")
 
-            # Exit Premiums section
-            st.markdown("#### 📉 Exit Premiums (Fill after closing trade)")
-            col5, col6 = st.columns(2)
-            with col5:
-                buy_exit = st.number_input("Buy Exit Premium", value=0.0, step=0.05, format="%.2f")
-            with col6:
-                sell_exit = st.number_input("Sell Exit Premium", value=0.0, step=0.05, format="%.2f")
+    # Entry spread metrics
+    net_spread = buy_entry - sell_entry
+    spread_target = net_spread * 1.5 if net_spread > 0 else 0
+    spread_sl = net_spread * 0.75 if net_spread > 0 else 0
+    buy_strike_target = buy_entry * 1.5 if buy_entry > 0 else 0
+    buy_strike_sl = buy_entry * 0.75 if buy_entry > 0 else 0
 
-            # Calculate exit spread and PnL
-            net_spread_sell = buy_exit - sell_exit
-            pnl = (net_spread_sell - net_spread) * qty if net_spread != 0 else 0
+    st.markdown("**Entry Spread Analysis:**")
+    s1, s2, s3 = st.columns(3)
+    with s1:
+        st.metric("Net Spread (Entry)", f"₹{net_spread:.2f}", delta="Credit" if net_spread < 0 else "Debit")
+    with s2:
+        st.metric("Spread Target", f"₹{spread_target:.2f}")
+    with s3:
+        st.metric("Spread SL", f"₹{spread_sl:.2f}")
 
-            # Display PnL and auto-determine result
-            if buy_exit > 0 or sell_exit > 0:
-                st.markdown("**Trade Exit Analysis:**")
-                exit1, exit2, exit3 = st.columns(3)
-                with exit1:
-                    st.metric("Net Spread (Exit)", f"₹{net_spread_sell:.2f}")
-                with exit2:
-                    pnl_color = "📈" if pnl > 0 else "📉" if pnl < 0 else "➡️"
-                    st.metric("Calculated PnL", f"₹{pnl:.0f}", delta=pnl)
-                with exit3:
-                    auto_result = "WIN" if pnl > 0 else "LOSS" if pnl < 0 else "NO TRADE"
-                    st.metric("Auto Result", auto_result)
+    s4, s5, s6 = st.columns(3)
+    max_profit = (spread_target - net_spread) * qty if spread_target > 0 else 0
+    max_loss = (net_spread - spread_sl) * qty if spread_sl > 0 else 0
+    rr = max_profit / max_loss if max_loss != 0 else 0
 
-            # Result and remarks
-            st.markdown("#### 📝 Trade Outcome & Notes")
-            col7, col8 = st.columns(2)
-            with col7:
-                # Auto-populate result based on PnL
-                default_result = "WIN" if pnl > 0 else "LOSS" if pnl < 0 else "BREAKEVEN"
-                result_index = ["WIN","LOSS","BREAKEVEN"].index(default_result) if default_result in ["WIN","LOSS","BREAKEVEN"] else 2
-                result = st.selectbox("Result Override (auto-set)", 
-                                    ["WIN","LOSS","BREAKEVEN"], 
-                                    index=result_index)
-            with col8:
-                st.write("")  # Spacer
-            
-            # Predefined remarks options
-            remarks_options = [
-                "DISCIPLINE – No trade signal",
-                "DISCIPLINE – IV too high",
-                "DISCIPLINE – Gap > 100",
-                "DISCIPLINE – Wednesday ban",
-                "DISCIPLINE – Monthly zone filter",
-                "PROCESS WIN – Executed as per plan",
-                "PROCESS LOSS – Executed as per plan",
-                "VIOLATION – Early exit before 2 PM",
-                "VIOLATION – Did not respect SL",
-                "VIOLATION – Discretionary exit at level",
-                "MARKET – Trend day",
-                "MARKET – Choppy / rangebound",
-                "MARKET – Reversal from daily resistance",
-                "MARKET – Support broken cleanly",
-                "SYSTEM – Entry good, exit needs work",
-                "SYSTEM – Consider adjusting TP",
-                "SYSTEM – TF misaligned but trade ok",
-            ]
-            
-            st.markdown("**Remarks Category**")
-            remarks_category = st.selectbox("Select reason/category", 
-                                           [""] + remarks_options,
-                                           index=0)
-            
-            st.markdown("**Additional Notes (Optional)**")
-            additional_notes = st.text_area("Add extra details if needed", "", height=50)
-            
-            # Combine remarks and notes
-            remarks = remarks_category
-            if additional_notes.strip():
-                remarks = f"{remarks_category} | {additional_notes}" if remarks_category else additional_notes
+    with s4:
+        st.metric("Max Profit", f"₹{max_profit:.0f}")
+    with s5:
+        st.metric("Max Loss", f"₹{abs(max_loss):.0f}")
+    with s6:
+        st.metric("Risk:Reward", f"{rr:.2f}" if max_loss != 0 else "N/A")
 
-            st.divider()
-            
-            if st.button("✅ Save Trade & Log", width='stretch'):
-                row = {c: None for c in COLUMNS}
-                row.update({
-                    "Date": date,
-                    "Day": day,
-                    "Previous day Close": int(prev_close),
-                    "Gap Points": gap_points,
-                    "Nifty Open": int(today_open),
-                    "Nifty Spot at 9.45 AM": int(spot_945),
-                    "Trigger High (+0.3%)": trig_high,
-                    "Trigger Low (-0.3%)": trig_low,
-                    "IV Percentile at 9.45 AM": int(iv_945),
-                    "Trade Signal": signal,
-                    "Buy Strike": int(buy_strike),
-                    "Sell Strike": int(sell_strike),
-                    "Buy Strike Entry Premium": buy_entry,
-                    "Sell Strike Entry Premium": sell_entry,
-                    "Buy Strike Exit Premium": buy_exit,
-                    "Sell Strike Exit Premium": sell_exit,
-                    "Debit Paid": net_spread * qty,
-                    "Exit Price": net_spread_sell * qty,
-                    "Qty": int(qty),
-                    "PnL": pnl,
-                    "Result": result,
-                    "Remarks": remarks,
-                    "TF_Monthly_Zone": tf_monthly,
-                    "TF_Near_Daily_SR": tf_daily,
-                    "TF_Hourly_Trend": tf_hourly,
-                    "TF_Trade_Allowed": trade_allowed,
-                })
-                append_row(row)
-                st.success(f"✅ Trade saved! PnL: ₹{pnl:.0f} | Result: {result}")
-                st.balloons()
+    s7, s8 = st.columns(2)
+    with s7:
+        st.metric("Buy Strike Target", f"₹{buy_strike_target:.2f}")
+    with s8:
+        st.metric("Buy Strike SL", f"₹{buy_strike_sl:.2f}")
+
+    # Exit premiums
+    st.markdown("#### 📉 Exit Premiums (Fill after closing trade)")
+    e1, e2 = st.columns(2)
+    with e1:
+        buy_exit = st.number_input("Buy Exit Premium", value=0.0, step=0.05, format="%.2f")
+    with e2:
+        sell_exit = st.number_input("Sell Exit Premium", value=0.0, step=0.05, format="%.2f")
+
+    net_spread_sell = buy_exit - sell_exit
+    pnl = (net_spread_sell - net_spread) * qty if net_spread != 0 else 0
+
+    if buy_exit > 0 or sell_exit > 0:
+        st.markdown("**Trade Exit Analysis:**")
+        e3, e4, e5 = st.columns(3)
+        with e3:
+            st.metric("Net Spread (Exit)", f"₹{net_spread_sell:.2f}")
+        with e4:
+            st.metric("Calculated PnL", f"₹{pnl:.0f}", delta=pnl)
+        with e5:
+            auto_result = "WIN" if pnl > 0 else "LOSS" if pnl < 0 else "NO TRADE"
+            st.metric("Auto Result", auto_result)
+
+    # Result & remarks
+    st.markdown("#### 📝 Trade Outcome & Notes")
+    r1, r2 = st.columns(2)
+    with r1:
+        default_result = "WIN" if pnl > 0 else "LOSS" if pnl < 0 else "BREAKEVEN"
+        result_index = ["WIN","LOSS","BREAKEVEN"].index(default_result)
+        result = st.selectbox("Result Override (auto-set)", ["WIN","LOSS","BREAKEVEN"], index=result_index)
+    with r2:
+        st.write("")
+
+    remarks_options = [
+        "DISCIPLINE – No trade signal",
+        "DISCIPLINE – IV too high",
+        "DISCIPLINE – Gap > 100",
+        "DISCIPLINE – Wednesday ban",
+        "DISCIPLINE – Monthly zone filter",
+        "PROCESS WIN – Executed as per plan",
+        "PROCESS LOSS – Executed as per plan",
+        "VIOLATION – Early exit before 2 PM",
+        "VIOLATION – Did not respect SL",
+        "VIOLATION – Discretionary exit at level",
+        "MARKET – Trend day",
+        "MARKET – Choppy / rangebound",
+        "MARKET – Reversal from daily resistance",
+        "MARKET – Support broken cleanly",
+        "SYSTEM – Entry good, exit needs work",
+        "SYSTEM – Consider adjusting TP",
+        "SYSTEM – TF misaligned but trade ok",
+    ]
+
+    st.markdown("**Remarks Category**")
+    remarks_category = st.selectbox("Select reason/category", [""] + remarks_options, index=0)
+
+    st.markdown("**Additional Notes (Optional)**")
+    additional_notes = st.text_area("Add extra details if needed", "", height=50)
+
+    remarks = remarks_category
+    if additional_notes.strip():
+        remarks = f"{remarks_category} | {additional_notes}" if remarks_category else additional_notes
+
+    st.divider()
+
+    if st.button("✅ Save Trade & Log", use_container_width=True):
+        row = {c: None for c in COLUMNS}
+        row.update({
+            "Date": date,
+            "Day": day,
+            "Previous day Close": int(prev_close),
+            "Gap Points": gap_points,
+            "Nifty Open": int(today_open),
+            "Nifty Spot at 9:45 AM": int(spot_945),
+            "Trigger High (+0.3%)": trig_high,
+            "Trigger Low (-0.3%)": trig_low,
+            "IV Percentile at 9:45 AM": int(iv_945),
+            "Trade Signal": signal,
+            "Buy Strike": int(buy_strike),
+            "Sell Strike": int(sell_strike),
+            "Buy Strike Entry Premium": buy_entry,
+            "Sell Strike Entry Premium": sell_entry,
+            "Buy Strike Exit Premium": buy_exit,
+            "Sell Strike Exit Premium": sell_exit,
+            "Debit Paid": net_spread * qty,
+            "Exit Price": net_spread_sell * qty,
+            "Qty": int(qty),
+            "PnL": pnl,
+            "Result": result,
+            "Remarks": remarks,
+            "TF_Monthly_Zone": tf_monthly,
+            "TF_Near_Daily_SR": tf_daily,
+            "TF_Hourly_Trend": tf_hourly,
+            "TF_Trade_Allowed": trade_allowed,
+        })
+        append_row(row)
+        st.success(f"✅ Trade saved! PnL: ₹{pnl:.0f} | Result: {result}")
+        st.balloons()
 
 # ---------- Page 2: Log (trade history view only) ----------
 
