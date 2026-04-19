@@ -29,7 +29,7 @@ def _get_worksheet():
         scopes=["https://www.googleapis.com/auth/spreadsheets"]
     )
     client = gspread.authorize(creds)
-    sheet = client.open_by_key(st.secrets["GCP_SHEET_ID"])
+    sheet = client.open_by_key(st.secrets["gcp_service_account"]["GCP_SHEET_ID"])
     # Use the first sheet; change to .worksheet("Sheet1") if you rename it
     return sheet.sheet1
 
