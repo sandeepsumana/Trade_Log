@@ -219,38 +219,38 @@ def page_validation():
             # Display warning if Daily S/R is nearby
             if warning_message:
                 st.warning(warning_message)
-
+                
     # Save NO TRADE row
-    if data_filled:
-        if signal == "NONE" and signal  != "":
-            trade_allowed = "NO"
+    if data_filled and trade_allowed == "NO":
+        # If we don't already have a reason and there was no signal, set default
+        if not no_trade_reason and signal == "NONE":
             no_trade_reason = "No 0.3% move"
             type_field = "NO TRADE (NO SIGNAL)"
-        elif trade_allowed == "NO":
-            if st.button("📝 Log as NO TRADE", width='stretch'):
-                row = {c: None for c in COLUMNS}
-                row.update({
-                    "Date": date,
-                    "Day": day,
-                    "Previous day Close": int(prev_close),
-                    "Gap Points": gap_points,
-                    "Nifty Open": int(today_open),
-                    "Nifty Spot at 9.45 AM": int(spot_945),
-                    "Trigger High (+0.3%)": trig_high,
-                    "Trigger Low (-0.3%)": trig_low,
-                    "IV Percentile at 9.45 AM": int(iv_945),
-                    "Trade Signal": type_field,
-                    "PnL": 0,
-                    "Result": "NO TRADE",
-                    "Remarks": "",
-                    "TF_Monthly_Zone": tf_monthly,
-                    "TF_Near_Daily_SR": tf_daily,
-                    "TF_Hourly_Trend": tf_hourly,
-                    "TF_Trade_Allowed": trade_allowed,
-                    "No_Trade_Reason": no_trade_reason,
-                })
-                append_row(row)
-                st.success("✅ No-trade day logged.")
+
+        if st.button("📝 Log as NO TRADE", use_container_width=True):
+            row = {c: None for c in COLUMNS}
+            row.update({
+                "Date": date,
+                "Day": day,
+                "Previous day Close": int(prev_close),
+                "Gap Points": gap_points,
+                "Nifty Open": int(today_open),
+                "Nifty Spot at 9.45 AM": int(spot_945),
+                "Trigger High (+0.3%)": trig_high,
+                "Trigger Low (-0.3%)": trig_low,
+                "IV Percentile at 9.45 AM": int(iv_945),
+                "Trade Signal": type_field,
+                "PnL": 0,
+                "Result": "NO TRADE",
+                "Remarks": "",
+                "TF_Monthly_Zone": tf_monthly,
+                "TF_Near_Daily_SR": tf_daily,
+                "TF_Hourly_Trend": tf_hourly,
+                "TF_Trade_Allowed": trade_allowed,
+                "No_Trade_Reason": no_trade_reason,
+            })
+            append_row(row)
+            st.success("✅ No-trade day logged.")
 
         # For trade days: show form to enter trade details (ONLY AFTER ALL DATA ENTERED)
         if data_filled and trade_allowed == "YES":
