@@ -2,3 +2,5 @@ streamlit>=1.32
 pandas>=2.0
 numpy>=1.26
 plotly>=5.20
+gspread>=6.1
+google-auth>=2.27
