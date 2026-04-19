@@ -1,11 +1,11 @@
 import streamlit as st
 import pandas as pd
-from pathlib import Path
 from datetime import datetime
 import plotly.graph_objects as go
 import plotly.express as px
 
-CSV_PATH = Path("Trade-Journal-2025-26-Journal.csv")
+import gspread
+from google.oauth2.service_account import Credentials
 
 # --- Columns (existing + new TF fields) ---
 COLUMNS = [
@@ -20,42 +20,61 @@ COLUMNS = [
     "TF_Trade_Allowed","No_Trade_Reason"
 ]
 
-# ---------- Helpers ----------
+# ---------- Google Sheets backend ----------
+
+def _get_worksheet():
+    """Return gspread worksheet using service-account credentials."""
+    creds = Credentials.from_service_account_info(
+        st.secrets["gcp_service_account"],
+        scopes=["https://www.googleapis.com/auth/spreadsheets"]
+    )
+    client = gspread.authorize(creds)
+    sheet = client.open_by_key(st.secrets["GCP_SHEET_ID"])
+    # Use the first sheet; change to .worksheet("Sheet1") if you rename it
+    return sheet.sheet1
 
 def load_data() -> pd.DataFrame:
-    if CSV_PATH.exists():
-        df = pd.read_csv(CSV_PATH)
-        # Ensure all expected columns exist
-        for col in COLUMNS:
-            if col not in df.columns:
-                df[col] = None
-        return df[COLUMNS]
+    """Load all data from the Google Sheet into a DataFrame."""
+    ws = _get_worksheet()
+    records = ws.get_all_records()  # list of dicts (skips header row)
+
+    if not records:
+        df = pd.DataFrame(columns=COLUMNS)
     else:
-        return pd.DataFrame(columns=COLUMNS)
+        df = pd.DataFrame(records)
+
+    # Ensure all expected columns exist and in correct order
+    for col in COLUMNS:
+        if col not in df.columns:
+            df[col] = None
+    return df[COLUMNS]
 
 def save_data(df: pd.DataFrame):
-    """Save data to CSV with explicit error handling and flushing."""
-    try:
-        df[COLUMNS].to_csv(CSV_PATH, index=False)
-        
-        # Verify file was written
-        if CSV_PATH.exists():
-            # Force OS-level sync to disk (ensures data durability)
-            import os
-            if hasattr(os, 'fsync'):
-                with open(CSV_PATH, 'a') as f:
-                    os.fsync(f.fileno())
-        else:
-            st.error("⚠️ Warning: CSV file may not have been saved properly")
-            raise IOError(f"File not found after save attempt: {CSV_PATH}")
-    except IOError as e:
-        st.error(f"❌ Error writing to file {CSV_PATH}: {e}")
-        raise  # Re-raise for upstream handling
+    """Overwrite the Google Sheet with the full DataFrame."""
+    ws = _get_worksheet()
+
+    # Clear entire sheet
+    ws.clear()
+
+    # Write header row
+    ws.append_row(COLUMNS, value_input_option="RAW")
+
+    # Write data rows (if any)
+    if not df.empty:
+        rows = df[COLUMNS].where(pd.notna(df), "").values.tolist()
+        ws.append_rows(rows, value_input_option="USER_ENTERED")
 
 def append_row(row_dict: dict):
-    df = load_data()
-    df = pd.concat([df, pd.DataFrame([row_dict])], ignore_index=True)
-    save_data(df)
+    """Append a single row to the sheet."""
+    ws = _get_worksheet()
+
+    # If sheet is empty (no header), initialise it
+    if not ws.get_all_values():
+        ws.append_row(COLUMNS, value_input_option="RAW")
+
+    # Build row in correct column order
+    row = [row_dict.get(col, "") for col in COLUMNS]
+    ws.append_row(row, value_input_option="USER_ENTERED")
 
 def today_str():
     return datetime.now().strftime("%d/%b/%Y")  # e.g. 10/Mar/2026
