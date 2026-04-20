@@ -228,8 +228,7 @@ def page_validation():
         return
 
     # ---------- NO-TRADE logging ----------
-
-    if trade_allowed == "NO":
+    if data_filled and trade_allowed == "NO":
         if not no_trade_reason and signal == "NONE":
             no_trade_reason = "No 0.3% move"
             type_field = "NO TRADE (NO SIGNAL)"
@@ -242,10 +241,10 @@ def page_validation():
                 "Previous day Close": int(prev_close),
                 "Gap Points": gap_points,
                 "Nifty Open": int(today_open),
-                "Nifty Spot at 9:45 AM": int(spot_945),
+                "Nifty Spot at 9.45 AM": int(spot_945),
                 "Trigger High (+0.3%)": trig_high,
                 "Trigger Low (-0.3%)": trig_low,
-                "IV Percentile at 9:45 AM": int(iv_945),
+                "IV Percentile at 9.45 AM": int(iv_945),
                 "Trade Signal": type_field,
                 "PnL": 0,
                 "Result": "NO TRADE",
@@ -387,7 +386,7 @@ def page_validation():
 
     st.divider()
 
-    if st.button("✅ Save Trade & Log", use_container_width=True):
+       if st.button("✅ Save Trade & Log", use_container_width=True):
         row = {c: None for c in COLUMNS}
         row.update({
             "Date": date,
@@ -395,10 +394,10 @@ def page_validation():
             "Previous day Close": int(prev_close),
             "Gap Points": gap_points,
             "Nifty Open": int(today_open),
-            "Nifty Spot at 9:45 AM": int(spot_945),
+            "Nifty Spot at 9.45 AM": int(spot_945),
             "Trigger High (+0.3%)": trig_high,
             "Trigger Low (-0.3%)": trig_low,
-            "IV Percentile at 9:45 AM": int(iv_945),
+            "IV Percentile at 9.45 AM": int(iv_945),
             "Trade Signal": signal,
             "Buy Strike": int(buy_strike),
             "Sell Strike": int(sell_strike),
@@ -416,6 +415,7 @@ def page_validation():
             "TF_Near_Daily_SR": tf_daily,
             "TF_Hourly_Trend": tf_hourly,
             "TF_Trade_Allowed": trade_allowed,
+            "No_Trade_Reason": "",  # usually empty for actual trades
         })
         append_row(row)
         st.success(f"✅ Trade saved! PnL: ₹{pnl:.0f} | Result: {result}")
@@ -448,11 +448,31 @@ def page_log():
     # All records table - select specific columns to display
     st.markdown("### 📈 All Records")
     display_columns = [
-        "Date", "Day", "Previous day Close", "Nifty Spot at 9.45 AM", 
-        "Trade Signal", "Buy Strike", "Sell Strike",
-        "Buy Strike Entry Premium", "Sell Strike Entry Premium",
-        "Buy Strike Exit Premium", "Sell Strike Exit Premium",
-        "Qty", "PnL", "Result", "Remarks"
+           "Date",
+        "Day",
+        "Previous day Close",
+        "Gap Points",
+        "Nifty Open",
+        "Nifty Spot at 9.45 AM",
+        "IV Percentile at 9.45 AM",
+        "Trigger High (+0.3%)",
+        "Trigger Low (-0.3%)",
+        "Trade Signal",
+        "Buy Strike",
+        "Sell Strike",
+        "Buy Strike Entry Premium",
+        "Sell Strike Entry Premium",
+        "Buy Strike Exit Premium",
+        "Sell Strike Exit Premium",
+        "Qty",
+        "PnL",
+        "Result",
+        "Remarks",
+        "TF_Monthly_Zone",
+        "TF_Near_Daily_SR",
+        "TF_Hourly_Trend",
+        "TF_Trade_Allowed",
+        "No_Trade_Reason",
     ]
     df_display = df[[col for col in display_columns if col in df.columns]]
     st.dataframe(df_display, width='stretch', height=500)
