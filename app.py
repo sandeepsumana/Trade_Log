@@ -386,7 +386,7 @@ def page_validation():
 
     st.divider()
 
-       if st.button("✅ Save Trade & Log", use_container_width=True):
+    if st.button("✅ Save Trade & Log", use_container_width=True):
         row = {c: None for c in COLUMNS}
         row.update({
             "Date": date,
